@@ -3,7 +3,7 @@
 **Author:** Santiago Leonardo Hernández Beltrán  
 **Affiliation:** Faculty of ICT Engineering, Universidad Pontificia Bolivariana (UPB), Medellín, Colombia  
 
-📄 **Full Paper:** [Read the full research paper (PDF)](./Hernandez_TRM_SME_Paper.pdf) *(update filename if different)*
+📄 **Full Paper:** [Read the full research paper (PDF)](./docs/Hernandez_TRM_SME_Paper.pdf)
 
 ---
 
