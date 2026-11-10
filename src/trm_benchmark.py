@@ -1,4 +1,5 @@
 import time
+from pathlib import Path
 import numpy as np
 import pandas as pd
 import torch
@@ -11,9 +12,19 @@ from sklearn.compose import ColumnTransformer
 from sklearn.metrics import accuracy_score, f1_score
 from xgboost import XGBClassifier
 
+# 0. Setup Data Directories
+RAW_DIR = Path("data/01_raw")
+REPORT_DIR = Path("data/08_reporting")
+RAW_DIR.mkdir(parents=True, exist_ok=True)
+REPORT_DIR.mkdir(parents=True, exist_ok=True)
+
 # 1. Load & Preprocess German Credit Dataset (1,000 samples)
 print("Loading dataset...")
+raw_csv_path = RAW_DIR / "credit_g_raw.csv"
 data = fetch_openml("credit-g", version=1, as_frame=True, parser="auto")
+data.frame.to_csv(raw_csv_path, index=False)
+print(f"Saved raw dataset to {raw_csv_path}")
+
 X = data.data
 y = (data.target == "good").astype(int).values
 
@@ -35,6 +46,8 @@ input_dim = X_train_proc.shape[1]
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device} | Input features: {input_dim}\n")
 
+results = []
+
 # 2. Baseline 1: XGBoost
 t0 = time.time()
 xgb = XGBClassifier(n_estimators=100, max_depth=4, learning_rate=0.1, random_state=42, eval_metric="logloss")
@@ -45,7 +58,17 @@ t0 = time.time()
 xgb_preds = xgb.predict(X_test_proc)
 xgb_inf_ms = ((time.time() - t0) / len(X_test_proc)) * 1000
 
-print(f"XGBoost      | Acc: {accuracy_score(y_test, xgb_preds):.4f} | F1: {f1_score(y_test, xgb_preds):.4f} | Train: {xgb_train_time:.2f}s | Inf: {xgb_inf_ms:.4f} ms/sample")
+xgb_acc = accuracy_score(y_test, xgb_preds)
+xgb_f1 = f1_score(y_test, xgb_preds)
+print(f"XGBoost      | Acc: {xgb_acc:.4f} | F1: {xgb_f1:.4f} | Train: {xgb_train_time:.2f}s | Inf: {xgb_inf_ms:.4f} ms/sample")
+results.append({
+    "Model": "XGBoost",
+    "Accuracy": round(xgb_acc, 4),
+    "F1_Score": round(xgb_f1, 4),
+    "Train_Time_s": round(xgb_train_time, 4),
+    "Inference_ms_per_sample": round(xgb_inf_ms, 4),
+    "Parameters": None
+})
 
 # PyTorch DataLoaders
 train_loader = DataLoader(TensorDataset(torch.tensor(X_train_proc), torch.tensor(y_train, dtype=torch.float32)), batch_size=32, shuffle=True)
@@ -125,7 +148,22 @@ def train_and_eval_torch(model, name, is_trm=False, epochs=40):
         preds = (torch.sigmoid(logits) > 0.5).cpu().numpy().astype(int)
     inf_ms = ((time.time() - t0) / len(X_test_proc)) * 1000
 
-    print(f"{name:<12} | Acc: {accuracy_score(y_test, preds):.4f} | F1: {f1_score(y_test, preds):.4f} | Train: {train_time:.2f}s | Inf: {inf_ms:.4f} ms/sample | Params: {params}")
+    acc = accuracy_score(y_test, preds)
+    f1 = f1_score(y_test, preds)
+    print(f"{name:<12} | Acc: {acc:.4f} | F1: {f1:.4f} | Train: {train_time:.2f}s | Inf: {inf_ms:.4f} ms/sample | Params: {params}")
+    results.append({
+        "Model": name,
+        "Accuracy": round(acc, 4),
+        "F1_Score": round(f1, 4),
+        "Train_Time_s": round(train_time, 4),
+        "Inference_ms_per_sample": round(inf_ms, 4),
+        "Parameters": params
+    })
 
 train_and_eval_torch(StandardMLP(input_dim), "Standard MLP", is_trm=False)
 train_and_eval_torch(TabularTRM(input_dim, d_latent=64, steps=4), "Tabular TRM", is_trm=True)
+
+# 5. Save Benchmark Report
+results_csv_path = REPORT_DIR / "benchmark_results.csv"
+pd.DataFrame(results).to_csv(results_csv_path, index=False)
+print(f"\nSaved benchmark results to {results_csv_path}")
